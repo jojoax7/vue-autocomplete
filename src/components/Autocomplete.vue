@@ -1,5 +1,7 @@
 <template>
     <div class="relative">
+        {{ arrowCounter }}
+
         <div class="relative rounded-md">
             <div class="absolute flex items-center inset-y-0 left-0 pl-3 text-gray-400">
                 <div style="width: 14px;">
@@ -25,10 +27,18 @@
 
             <input
                 type="text"
+                ref="input"
+                :placeholder="placeholder"
+                :value="keyword"
+                @input="onInput($event.target.value)"
+                @keydown="onKeydown"
+                @blur="onBlur"
                 :class="inputClassList"
             >
 
             <button
+                v-if="keyword"
+                @click="onClear"
                 type="button"
                 class="absolute right-0 top-0 inset-y-0 right-0 pr-3 flex items-center cursor-pointer text-gray-400 focus:outline-none hover:text-gray-400"
             >
@@ -48,12 +58,24 @@
         </div>
 
         <div
+            v-show="mutableOptions.length"
             class="absolute right-0 mt-2 w-full rounded-md shadow-lg z-50 overflow-y-scroll"
             style="max-height: 200px;"
         >
             <ul class="py-1 rounded-md bg-white shadow-xs">
-                <li class="typeahead-item block px-4 py-2 text-sm leading-5 text-gray-700 cursor-pointer">
-                    Nome da cidade
+                <li 
+                    v-for="(option, index) in mutableOptions"
+                    :key="option[valueKey]"
+                    @click="onSelect(option)"
+                    :ref="`option_${index}`"
+                    @mouseover="setArrowCounter(index)"
+                    class="typeahead-item block px-4 py-2 text-sm leading-5 text-gray-700 cursor-pointer"
+                    :class="{ 'bg-gray-100': arrowCounter === index}"
+                >
+                    <span 
+                        class="font-normal"
+                        v-html="option[`${labelKey}_highlighted`] || option[labelKey]"
+                    />
                 </li>
             </ul>
         </div>
@@ -64,9 +86,172 @@
     export default {
         name: 'Autocomplete',
 
+        props: {
+            value: {
+                type: String,
+                default: '',
+            },
+            options: {
+                type: Array,
+                default: () => [],
+            },
+            valueKey: {
+                type: String,
+                default: 'id',
+            },
+            labelKey: {
+                type: String,
+                default: 'label',
+            },
+            searchMinLength: {
+                type: Number,
+                default: 2,
+            },
+            placeholder: {
+                type: String,
+                default: '',
+            },
+        },
+
         data() {
             return {
+                keyword: '',
+                arrowCounter: 0,
+                originalOptions: [],
+                mutableOptions: [],
             };
+        },
+
+        watch: {
+            value(value) {
+                this.keyword = value;
+            },
+            options() {
+                this.cloneOptions();
+            },
+        },
+
+        created() {
+            this.keyword = this.value;
+            if(this.options.length) {
+                this.cloneOptions(); 
+            }
+        },
+
+        methods: {
+            onInput(vl) {
+                this.keyword = vl;
+                this.emitInput();
+                if(vl.length >= this.searchMinLength) {
+                    if(!this.originalOptions.length) {
+                        this.$emit('shouldSearch', vl);
+                    } else {
+                        this.searchInternally();
+                    }
+                } else {
+                    this.resetOptions();
+                }
+            },
+            onKeydown(event) {
+                if(!this.mutableOptions.length) { return; }
+
+                switch (event.code) { 
+                    case 'ArrowDown':
+                        event.preventDefault();
+                        this.onArrowDown();
+                        break;
+                    
+                    case 'ArrowUp':
+                        event.preventDefault();
+                        this.onArrowUp();
+                        break;
+
+                    case 'Enter':
+                        this.onSelect();
+                        break;
+                    case 'Escape':
+                        this.onEsc();
+                        break;
+                }
+            },
+            onEsc() {
+                this.$refs.input.blur();
+                this.resetArrowCounter();
+                this.resetOptions();
+            },
+            onBlur(event) {
+                const target = event.relatedTarget;
+                if(target && target.contains('autocomplete-item')) return;
+
+                this.resetArrowCounter();
+                this.resetOptions();
+            },
+            onArrowDown() {
+                if(this.arrowCounter < this.mutableOptions.length - 1) this.arrowCounter++;
+                this.fixScrolling();
+            },
+            onArrowUp() {
+                if(this.arrowCounter > 0) this.arrowCounter--;
+                this.fixScrolling();
+            },
+            setArrowCounter(index) {
+                this.arrowCounter = index;
+            },
+            fixScrolling() {
+                this.$refs[`option_${this.arrowCounter}`][0].scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'start'});
+            },
+            resetArrowCounter() {
+                this.arrowCounter = 0;
+            },
+            searchInternally() {
+                const search = this.keyword;
+                this.mutableOptions = this.originalOptions.filter( (option) => {
+                    return option[this.labelKey].toLowerCase().search(search.toLowerCase()) >= 0;
+                });
+                this.highlightOptions();
+            },
+            highlightOptions() {
+                const search = this.keyword;
+                const query = new RegExp(search, 'i');
+
+                this.mutableOptions.forEach( (option) => {
+                    this.$set(option, `${this.labelKey}_highlighted`, option[this.labelKey].replace(query, '<span class="font-semibold ">$&</span>'));
+                });
+            },
+            cloneOptions() {
+                this.originalOptions = JSON.parse(JSON.stringify(this.options));
+                this.mutableOptions = JSON.parse(JSON.stringify(this.options));
+                this.searchInternally();
+            },
+            resetOptions() {
+                this.originalOptions = [];
+                this.mutableOptions = [];
+                this.resetArrowCounter();
+            },
+            onSelect() {
+                const selected = this.mutableOptions[this.arrowCounter];
+                const selectedOption = this.options.find( (option) => {
+                    return option[this.valueKey] == selected[this.valueKey];
+                });
+                
+                if(selectedOption) {
+                    this.$emit('select', selectedOption);
+                    this.keyword = selectedOption[this.labelKey];
+                    this.resetOptions();
+                }
+            },
+            emitInput() {
+                this.$emit('input', this.keyword);
+            },
+            resetKeyword() {
+                this.keyword = '';
+                this.emitInput();
+            },
+            onClear() {
+                this.$emit('select', null);
+                this.resetKeyword();
+                this.resetOptions();
+            },
         },
 
         computed: {

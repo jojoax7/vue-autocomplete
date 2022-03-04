@@ -7,9 +7,17 @@
             <h3 class="text-center text-lg font-bold mb-4">
                 Vue.js autocomplete
             </h3>
-
+            
             <div class="w-64 mx-auto">
-                <Autocomplete />
+                <Autocomplete 
+                    v-model="client"
+                    :options="clients"
+                    value-key="id_client"
+                    label-key="label"
+                    placeholder="Search client"
+                    @shouldSearch="searchClients"
+                    @select="onSelect"
+                />
             </div>
         </div>
     </div>
@@ -20,23 +28,24 @@
 
     export default {
         name: 'App',
+
         components: {
             Autocomplete,
         },
+
         data() {
             return {
-                city: '',
-                cities: [],
+                client: '',
+                clients: [],
             };
         },
 
         methods: {
-            searchCities(query) {
-                fetch(`http://statecity.test/api/v1/?query=${query}`).then(response => response.json()).then((r) => {
-                    this.cities = r.data;
+            searchClients(query) {
+                fetch(`http://localhost:8000/api/clients?term=${query}`).then(response => response.json()).then((r) => {
+                    this.clients = r.data;
                 });
             },
-
             onSelect(city) {
                 console.log(city);
             },
